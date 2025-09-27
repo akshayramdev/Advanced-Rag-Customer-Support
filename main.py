@@ -21,6 +21,10 @@ import faiss
 from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.cluster import KMeans
 
+# Load environment variables
+from dotenv import load_dotenv
+load_dotenv()
+
 # HTTP requests for Groq API
 import requests
 
@@ -84,8 +88,12 @@ class QueryClassifier:
 class GroqLLMClient:
     """Fixed Groq API client for fast LLM inference"""
     
-    def __init__(self, api_key: str = "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"):
-        self.api_key = api_key
+    def __init__(self):
+        # Get API key from environment variable
+        self.api_key = os.getenv("GROQ_API_KEY")
+        if not self.api_key:
+            raise ValueError("GROQ_API_KEY environment variable not found. Please create a .env file with your API key.")
+        
         self.base_url = "https://api.groq.com/openai/v1/chat/completions"
         self.model = "llama-3.1-8b-instant"  # Use a more reliable model
         self.test_connection()

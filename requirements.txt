@@ -22,3 +22,5 @@ aiofiles>=23.0.0
 
 # Optional: for production deployment
 gunicorn>=20.1.0
+
+python-dotenv>=1.0.0

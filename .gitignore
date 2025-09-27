@@ -81,3 +81,10 @@ secrets.json
 *.temp
 temp/
 tmp/
+
+.env
+*.env
+__pycache__/
+*.pyc
+customer_support.db
+simple_evaluation_report.json
