@@ -95,7 +95,7 @@ class GroqLLMClient:
             raise ValueError("GROQ_API_KEY environment variable not found. Please create a .env file with your API key.")
         
         self.base_url = "https://api.groq.com/openai/v1/chat/completions"
-        self.model = "llama-3.1-8b-instant"  # Use a more reliable model
+        self.model = "mixtral-8x7b-32768"  # Use a more reliable model
         self.test_connection()
     
     def test_connection(self):
