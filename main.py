@@ -6,6 +6,7 @@ import json
 import sqlite3
 import hashlib
 import time
+import uuid
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, asdict
@@ -845,7 +846,7 @@ Provide a helpful, professional response that addresses the customer's specific 
 # API Models
 class QueryRequest(BaseModel):
     query: str
-    session_id: Optional[str] = "default"
+    session_id: Optional[str] = None  # Make optional instead of "default"
     include_explainability: Optional[bool] = True
 
 class FeedbackRequest(BaseModel):
@@ -879,8 +880,15 @@ async def startup_event():
 
 @app.post("/generate_response")
 async def generate_response(request: QueryRequest, background_tasks: BackgroundTasks):
-    """Main endpoint for generating customer support responses"""
+    """Enhanced endpoint with automatic session management"""
     try:
+        # Generate session_id if not provided
+        if not request.session_id:
+            request.session_id = str(uuid.uuid4())
+            print(f"📝 Generated new session ID: {request.session_id}")
+        else:
+            print(f"🔄 Using existing session ID: {request.session_id}")
+        
         # Classify query
         category, category_confidence = rag_system.classifier.classify_query(request.query)
         
@@ -904,13 +912,30 @@ async def generate_response(request: QueryRequest, background_tasks: BackgroundT
             'confidence': category_confidence
         }
         
+        # Always include session_id in response for client tracking
+        response_data['session_id'] = request.session_id
+        
+        # Add session info for new sessions
+        if len(rag_system.conversation_context[request.session_id]) == 1:
+            response_data['session_info'] = {
+                'new_session': True,
+                'message': 'New conversation started. Use this session_id for follow-up questions.'
+            }
+        else:
+            response_data['session_info'] = {
+                'new_session': False,
+                'conversation_length': len(rag_system.conversation_context[request.session_id]),
+                'message': 'Continuing existing conversation.'
+            }
+        
         # Conditionally include explainability
         if not request.include_explainability:
-            # Remove detailed explanations for cleaner response
             simplified_response = {
                 'response': response_data['response'],
                 'confidence': response_data['confidence'],
-                'category': response_data['category']
+                'category': response_data['category'],
+                'session_id': response_data['session_id'],
+                'session_info': response_data['session_info']
             }
             return simplified_response
         
@@ -918,6 +943,79 @@ async def generate_response(request: QueryRequest, background_tasks: BackgroundT
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating response: {str(e)}")
+    
+# Add a new endpoint to get session information
+@app.get("/session/{session_id}")
+async def get_session_info(session_id: str):
+    """Get information about a specific session"""
+    if session_id not in rag_system.conversation_context:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    conversation = rag_system.conversation_context[session_id]
+    
+    return {
+        "session_id": session_id,
+        "conversation_length": len(conversation),
+        "started_at": conversation[0]['timestamp'] if conversation else None,
+        "last_activity": conversation[-1]['timestamp'] if conversation else None,
+        "message_count": len(conversation),
+        "categories_discussed": list(set([
+            msg.get('category', 'unknown') for msg in conversation 
+            if msg.get('category')
+        ])),
+        "conversation_preview": [
+            {
+                "query": msg['query'][:100] + "..." if len(msg['query']) > 100 else msg['query'],
+                "timestamp": msg['timestamp']
+            }
+            for msg in conversation[-3:]  # Last 3 messages
+        ]
+    }
+# Add endpoint to list all active sessions (for demonstration)
+@app.get("/sessions")
+async def list_active_sessions():
+    """List all active sessions with basic info"""
+    sessions = []
+    
+    for session_id, conversation in rag_system.conversation_context.items():
+        if conversation:  # Only include sessions with messages
+            sessions.append({
+                "session_id": session_id,
+                "message_count": len(conversation),
+                "last_activity": conversation[-1]['timestamp'],
+                "started_at": conversation[0]['timestamp']
+            })
+    
+    # Sort by last activity
+    sessions.sort(key=lambda x: x['last_activity'], reverse=True)
+    
+    return {
+        "active_sessions": len(sessions),
+        "sessions": sessions[:10]  # Return last 10 active sessions
+    }
+
+# Update the update_conversation_context method to include better metadata
+def update_conversation_context(self, session_id: str, query: str, response: str):
+    """Enhanced conversation context management with metadata"""
+    # Add to conversation history with enhanced metadata
+    self.conversation_context[session_id].append({
+        'query': query,
+        'response': response,
+        'timestamp': datetime.now().isoformat(),
+        'message_id': str(uuid.uuid4()),
+        'query_length': len(query),
+        'response_length': len(response)
+    })
+    
+    # Keep only last 10 exchanges per session (instead of 5)
+    if len(self.conversation_context[session_id]) > 10:
+        self.conversation_context[session_id] = self.conversation_context[session_id][-10:]
+    
+    # Cleanup old sessions (older than 2 hours instead of 1)
+    current_time = time.time()
+    if current_time - self.last_cleanup > 7200:  # Every 2 hours
+        self.cleanup_old_sessions()
+        self.last_cleanup = current_time
 
 @app.post("/feedback")
 async def submit_feedback(feedback: FeedbackRequest):
