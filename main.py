@@ -255,7 +255,7 @@ class AdvancedRAGSystem:
             
             # Use stratified sampling for better diversity
             print("📊 Creating stratified sample for better performance...")
-            sample_size = min(8000, len(df))  # Increased to 8000 for better coverage
+            sample_size = min(10000, len(df))  # Increased to 10,000 for better coverage
             
             # Sample evenly across the dataset
             step = len(df) // sample_size
